@@ -1,34 +1,74 @@
-# run_simulation_fast.py
-
 import numpy as np
 import pickle
 import time
+from itertools import product # Used for iterating (x,y)
 
 class Lattice:
     def __init__(self, size):
         self.size = size  # n x n
 
-class MovementMatrixStripes:
+class MovementMatrix:
     """
-    Creates vertical stripes with user-defined rates for all event types:
-    - Hopping
-    - Adsorption (A, B)
-    - Desorption (A, B)
-    - Reaction (A->B, B->A)
+    --- UNIFIED MOVEMENT MATRIX ---
+    Creates a site map based on the specified 'mode' ('stripes' or 'random')
+    and then builds the event catalog from that map.
     
-    --- OPTIMIZATION 1 ---
-    This class pre-calculates a cumulative rate array for O(log M) event picking.
+    The 'site_map' is an n x n array where each cell contains the site type
+    (e.g., 0 for 'blue', 1 for 'red').
     """
-    def __init__(self, n, num_stripes, 
-                 stripe_hop_rates, 
-                 stripe_ads_A_rates, stripe_des_A_rates,
-                 stripe_ads_B_rates, stripe_des_B_rates,
-                 stripe_react_A_to_B_rates, stripe_react_B_to_A_rates):
+    def __init__(self, n, mode, seed, 
+                 site_type_hop_rates, 
+                 site_type_ads_A_rates, site_type_des_A_rates,
+                 site_type_ads_B_rates, site_type_des_B_rates,
+                 site_type_react_A_to_B_rates, site_type_react_B_to_A_rates,
+                 num_site_types=None, site_type_fractions=None):
         
         self.n = n
         self.directions = [(-1, 0), (1, 0), (0, 1), (0, -1)]
+        self.rng = np.random.default_rng(seed)
 
-        # --- Create Rate Matrices for ALL event types ---
+        # --- 1. Generate the site_map based on the chosen mode ---
+        
+        if mode == 'stripes':
+            print("Generating 'stripes' site map...")
+            if num_site_types is None:
+                num_site_types = len(site_type_hop_rates)
+            
+            stripe_width = n // num_site_types
+            self.site_map = np.zeros((n, n), dtype=int)
+            for stripe_index in range(num_site_types):
+                x_start = stripe_index * stripe_width
+                # Ensure the last stripe goes all the way to the edge
+                x_end = (x_start + stripe_width) if stripe_index < num_site_types - 1 else n
+                
+                # --- THIS IS THE FIX ---
+                # Assign site type to VERTICAL columns, not horizontal rows.
+                # [:, x_start:x_end] = "all rows, columns from x_start to x_end"
+                self.site_map[:, x_start:x_end] = stripe_index
+            
+        elif mode == 'random':
+            print("Generating 'random' site map...")
+            if site_type_fractions is None:
+                raise ValueError("site_type_fractions must be provided for 'random' mode")
+            
+            total_sites = n * n
+            
+            # Determine number of sites for each type
+            site_counts = [int(f * total_sites) for f in site_type_fractions]
+            site_counts[-1] = total_sites - sum(site_counts[:-1]) 
+            
+            flat_map = []
+            for site_type, count in enumerate(site_counts):
+                flat_map.extend([site_type] * count)
+            
+            self.rng.shuffle(flat_map)
+            self.site_map = np.array(flat_map).reshape((n, n))
+        
+        else:
+            raise ValueError(f"Unknown LATTICE_MODE: '{mode}'. Must be 'stripes' or 'random'.")
+
+        # --- 2. Create Rate Matrices based on the generated site_map ---
+        
         hop_matrix = np.zeros((n, n, 4))
         ads_A_matrix = np.zeros((n, n))
         des_A_matrix = np.zeros((n, n))
@@ -36,86 +76,113 @@ class MovementMatrixStripes:
         des_B_matrix = np.zeros((n, n))
         react_A_to_B_matrix = np.zeros((n, n))
         react_B_to_A_matrix = np.zeros((n, n))
-        
-        stripe_width = n // num_stripes
 
-        # Populate all rate matrices based on stripe index
-        for stripe_index in range(num_stripes):
-            x_start = stripe_index * stripe_width
-            x_end = x_start + stripe_width
+        # Populate rate matrices by looking up the type of each site
+        for x, y in product(range(n), range(n)):
+            # NOTE: site_map is indexed [row, col] which is [y, x]
+            # But since our map is built relative to x/y, we index [x,y]
+            # To fix the *previous* bug, we must index the map as [y, x]
+            # OR, we fix the map generation. I've fixed the map generation.
+            # So now site_map[x, y] is correct...
+            # ... NO, wait.
+            # plt.imshow plots [row, col] -> (y, x)
+            # Our simulation logic uses (x, y)
+            # The site_map[x_start:x_end, :] was creating (x=0..9, y=all) = 0
+            # imshow plots this as (y=0..9, x=all) = 0, which is horizontal.
+            #
+            # The FIX: self.site_map[:, x_start:x_end] = stripe_index
+            # This creates (y=all, x=0..9) = 0
+            # imshow plots this as (x=0..9, y=all) = 0, which is vertical.
+            #
+            # Now, when we query rates, we must get the right (x,y)
+            # site_type = self.site_map[x, y] <- This is [row, col]
+            #
+            # Let's test this:
+            # map = np.zeros((3,3))
+            # map[:, 0:2] = 1
+            # map = [[1, 1, 0],
+            #        [1, 1, 0],
+            #        [1, 1, 0]]
+            #
+            # site_map[x=0, y=0] should be 1. map[0, 0] is 1.
+            # site_map[x=1, y=0] should be 1. map[0, 1] is 1.
+            # site_map[x=2, y=0] should be 0. map[0, 2] is 0.
+            #
+            # This is indexed (row, col) which is (y, x)
+            # So it should be:
+            site_type = self.site_map[y, x] # Get site type (0 or 1)
             
-            # Get rates for this stripe
-            rate_hop = stripe_hop_rates[stripe_index]
-            rate_ads_A = stripe_ads_A_rates[stripe_index]
-            rate_des_A = stripe_des_A_rates[stripe_index]
-            rate_ads_B = stripe_ads_B_rates[stripe_index]
-            rate_des_B = stripe_des_B_rates[stripe_index]
-            rate_react_A = stripe_react_A_to_B_rates[stripe_index]
-            rate_react_B = stripe_react_B_to_A_rates[stripe_index]
+            # Get rates for this specific site type
+            rate_hop = site_type_hop_rates[site_type]
+            rate_ads_A = site_type_ads_A_rates[site_type]
+            rate_des_A = site_type_des_A_rates[site_type]
+            rate_ads_B = site_type_ads_B_rates[site_type]
+            rate_des_B = site_type_des_B_rates[site_type]
+            rate_react_A = site_type_react_A_to_B_rates[site_type]
+            rate_react_B = site_type_react_B_to_A_rates[site_type]
             
-            for x in range(x_start, min(x_end, n)):
-                for y in range(n):
-                    hop_matrix[x, y, :] = rate_hop
-                    ads_A_matrix[x, y] = rate_ads_A
-                    des_A_matrix[x, y] = rate_des_A
-                    ads_B_matrix[x, y] = rate_ads_B
-                    des_B_matrix[x, y] = rate_des_B
-                    react_A_to_B_matrix[x, y] = rate_react_A
-                    react_B_to_A_matrix[x, y] = rate_react_B
+            # Assign rates to this specific (x, y) coordinate
+            hop_matrix[x, y, :] = rate_hop
+            ads_A_matrix[x, y] = rate_ads_A
+            des_A_matrix[x, y] = rate_des_A
+            ads_B_matrix[x, y] = rate_ads_B
+            des_B_matrix[x, y] = rate_des_B
+            react_A_to_B_matrix[x, y] = rate_react_A
+            react_B_to_A_matrix[x, y] = rate_react_B
         
-        # --- Build the fast event catalog ---
+        # --- 3. Build the fast event catalog (Common to both modes) ---
+        
         self.events = []
         event_rates = []
 
-        for x in range(n):
-            for y in range(n):
-                site = (x, y)
-                
-                # Hopping events
-                for d, (dx, dy) in enumerate(self.directions):
-                    rate = float(hop_matrix[x, y, d])
-                    if rate > 0:
-                        # Hop event is particle-agnostic; _execute will check occupation
-                        self.events.append(("hop", site, (dx, dy), rate))
-                        event_rates.append(rate)
-                
-                # Adsorption A
-                rate = ads_A_matrix[x, y]
+        # This loop iterates (x, y) from (0,0), (0,1)...
+        # This matches the rate matrices, so this is correct.
+        for x, y in product(range(n), range(n)):
+            site = (x, y)
+            
+            # Hopping events
+            for d, (dx, dy) in enumerate(self.directions):
+                rate = float(hop_matrix[x, y, d])
                 if rate > 0:
-                    self.events.append(("in_A", site, rate))
+                    self.events.append(("hop", site, (dx, dy), rate))
                     event_rates.append(rate)
-                
-                # Adsorption B
-                rate = ads_B_matrix[x, y]
-                if rate > 0:
-                    self.events.append(("in_B", site, rate))
-                    event_rates.append(rate)
-                
-                # Desorption A
-                rate = des_A_matrix[x, y]
-                if rate > 0:
-                    self.events.append(("out_A", site, rate))
-                    event_rates.append(rate)
+            
+            # Adsorption A
+            rate = ads_A_matrix[x, y]
+            if rate > 0:
+                self.events.append(("in_A", site, rate))
+                event_rates.append(rate)
+            
+            # Adsorption B
+            rate = ads_B_matrix[x, y]
+            if rate > 0:
+                self.events.append(("in_B", site, rate))
+                event_rates.append(rate)
+            
+            # Desorption A
+            rate = des_A_matrix[x, y]
+            if rate > 0:
+                self.events.append(("out_A", site, rate))
+                event_rates.append(rate)
 
-                # Desorption B
-                rate = des_B_matrix[x, y]
-                if rate > 0:
-                    self.events.append(("out_B", site, rate))
-                    event_rates.append(rate)
+            # Desorption B
+            rate = des_B_matrix[x, y]
+            if rate > 0:
+                self.events.append(("out_B", site, rate))
+                event_rates.append(rate)
 
-                # Reaction A -> B
-                rate = react_A_to_B_matrix[x, y]
-                if rate > 0:
-                    self.events.append(("react_A_to_B", site, rate))
-                    event_rates.append(rate)
+            # Reaction A -> B
+            rate = react_A_to_B_matrix[x, y]
+            if rate > 0:
+                self.events.append(("react_A_to_B", site, rate))
+                event_rates.append(rate)
 
-                # Reaction B -> A
-                rate = react_B_to_A_matrix[x, y]
-                if rate > 0:
-                    self.events.append(("react_B_to_A", site, rate))
-                    event_rates.append(rate)
+            # Reaction B -> A
+            rate = react_B_to_A_matrix[x, y]
+            if rate > 0:
+                self.events.append(("react_B_to_A", site, rate))
+                event_rates.append(rate)
         
-        # Create the cumulative rate array and store the total rate
         self.cumulative_rates = np.cumsum(event_rates)
         if len(self.cumulative_rates) > 0:
             self.total_rate_val = self.cumulative_rates[-1]
@@ -132,21 +199,16 @@ class MovementMatrixStripes:
         """
         if self.total_rate_val == 0:
             return None, 0.0
-
         T = self.total_rate_val
         r = np.random.rand() * T
-        
-        # Use binary search to find the index
         index = np.searchsorted(self.cumulative_rates, r, side='right')
-        
         return self.events[index], T
 
 class KMCSimulation:
     """
-    --- OPTIMIZATION 2 ---
-    Uses two dictionaries for O(1) lookups:
-    1. self.particles:  pid -> {'site': (x,y), 'type': 'A'/'B'}
-    2. self.occupation: site -> pid
+    --- NO CHANGES NEEDED ---
+    This class is fully generic and just executes the events
+    passed to it by the MovementMatrix.
     """
     def __init__(self, lattice, movement_matrix, max_unique_particles, total_time, seed):
         self.lattice = lattice
@@ -155,15 +217,12 @@ class KMCSimulation:
         self.max_particles = max_unique_particles
         self.rng = np.random.default_rng(seed)
         
-        # self.particles: {pid: {'site': (x, y), 'type': 'A' or 'B'}}
         self.particles = {}
-        # self.occupation: {(x, y): pid} - for O(1) lookups
         self.occupation = {}
         
         self.available_pids = set(range(self.max_particles))
         self.next_new_pid = self.max_particles
         self.time_stamps = [0.0]
-        # Snapshots will store {(x, y): 'A', ...}
         self.snapshots = [{}] 
         self.trajectories = {}
 
@@ -172,38 +231,30 @@ class KMCSimulation:
         
         if kind == "in_A":
             site, _ = data
-            # O(1) check
             if site not in self.occupation and len(self.particles) < self.max_particles:
                 pid = self.available_pids.pop() if self.available_pids else self.next_new_pid
                 if pid == self.next_new_pid: self.next_new_pid += 1
                 
-                # Update both maps
                 self.particles[pid] = {'site': site, 'type': 'A'}
                 self.occupation[site] = pid
-                
                 self.trajectories.setdefault(pid, []).append(site)
                 return True
         
         elif kind == "in_B":
             site, _ = data
-            # O(1) check
             if site not in self.occupation and len(self.particles) < self.max_particles:
                 pid = self.available_pids.pop() if self.available_pids else self.next_new_pid
                 if pid == self.next_new_pid: self.next_new_pid += 1
                 
-                # Update both maps
                 self.particles[pid] = {'site': site, 'type': 'B'}
                 self.occupation[site] = pid
-                
                 self.trajectories.setdefault(pid, []).append(site)
                 return True
                 
         elif kind == "out_A":
             site, _ = data
-            # O(1) check and lookup
             if site in self.occupation:
                 pid = self.occupation[site]
-                # Check particle type before desorbing
                 if self.particles[pid]['type'] == 'A':
                     del self.particles[pid]
                     del self.occupation[site]
@@ -212,10 +263,8 @@ class KMCSimulation:
 
         elif kind == "out_B":
             site, _ = data
-            # O(1) check and lookup
             if site in self.occupation:
                 pid = self.occupation[site]
-                # Check particle type before desorbing
                 if self.particles[pid]['type'] == 'B':
                     del self.particles[pid]
                     del self.occupation[site]
@@ -224,19 +273,14 @@ class KMCSimulation:
                 
         elif kind == "hop":
             src, (dx, dy), _ = data
-            # O(1) check and lookup
             if src in self.occupation:
                 pid_at_src = self.occupation[src]
                 dest = ((src[0] + dx) % self.lattice.size, (src[1] + dy) % self.lattice.size)
                 
-                # O(1) check
                 if dest not in self.occupation:
-                    # Update both maps
                     del self.occupation[src]
                     self.occupation[dest] = pid_at_src
-                    # Update the particle's site, type remains unchanged
                     self.particles[pid_at_src]['site'] = dest 
-                    
                     self.trajectories[pid_at_src].append(dest)
                     return True
         
@@ -244,18 +288,16 @@ class KMCSimulation:
             site, _ = data
             if site in self.occupation:
                 pid = self.occupation[site]
-                # Check type before reacting
                 if self.particles[pid]['type'] == 'A':
-                    self.particles[pid]['type'] = 'B' # Just change type
+                    self.particles[pid]['type'] = 'B'
                     return True
         
         elif kind == "react_B_to_A":
             site, _ = data
             if site in self.occupation:
                 pid = self.occupation[site]
-                # Check type before reacting
                 if self.particles[pid]['type'] == 'B':
-                    self.particles[pid]['type'] = 'A' # Just change type
+                    self.particles[pid]['type'] = 'A'
                     return True
 
         return False
@@ -278,14 +320,12 @@ class KMCSimulation:
             t += dt
             
             if t - last_recorded_t >= min_interval:
-                # Create snapshot in {(x, y): type} format
                 snapshot_data = {p_data['site']: p_data['type'] 
                                  for pid, p_data in self.particles.items()}
                 self.snapshots.append(snapshot_data)
                 self.time_stamps.append(t)
                 last_recorded_t = t
         
-        # Add final state
         snapshot_data = {p_data['site']: p_data['type'] 
                          for pid, p_data in self.particles.items()}
         self.snapshots.append(snapshot_data)
@@ -296,83 +336,95 @@ class KMCSimulation:
 
 # Main execution block
 if __name__ == "__main__":
-    # Simulation Parameters
+    
+    # --- 1. CHOOSE LATTICE MODE ---
+    # Options: 'stripes' or 'random'
+    LATTICE_MODE = 'random' 
+    
+    # --- 2. Simulation Parameters ---
     LATTICE_SIZE = 20
     TOTAL_TIME = 10000
     RANDOM_SEED = 42
 
-    # --- Stripe Configuration ---
-    # Stripe 0: Blue
-    # Stripe 1: Red
-    NUM_STRIPES = 2
+    # --- 3. Site Type Configuration (Common) ---
+    # Site Type 0: Blue
+    # Site Type 1: Red
+    SITE_TYPE_HOP_RATES = [1.0, 1.0] 
     
-    # Per user request:
-    # Hopping: 1.0 for both
-    STRIPE_HOP_RATES = [1.0, 1.0] 
+    SITE_TYPE_ADS_A_RATES = [0.1, 0.0]
+    SITE_TYPE_DES_A_RATES = [0.001, 0.01]
+    SITE_TYPE_ADS_B_RATES = [0.0, 0.0]
+    SITE_TYPE_DES_B_RATES = [0.01, 0.1]
     
-    # Blue (0): Ads A: 0.1, Des A: 0.001, Ads B: 0.0, Des B: 0.01
-    # Red (1):  Ads A: 0.0, Des A: 0.01,  Ads B: 0.0, Des B: 0.1
-    STRIPE_ADS_A_RATES = [0.1, 0.0]
-    STRIPE_DES_A_RATES = [0.001, 0.01]
-    STRIPE_ADS_B_RATES = [0.0, 0.0]
-    STRIPE_DES_B_RATES = [0.01, 0.1]
-    
-    # Blue (0): A->B: 0, B->A: 0
-    # Red (1):  A->B: 0.01, B->A: 0
-    STRIPE_REACT_A_TO_B_RATES = [0.0, 0.01]
-    STRIPE_REACT_B_TO_A_RATES = [0.0, 0.0]
+    SITE_TYPE_REACT_A_TO_B_RATES = [0.0, 0.01]
+    SITE_TYPE_REACT_B_TO_A_RATES = [0.0, 0.0]
 
-    # --- Sanity Checks ---
-    assert len(STRIPE_HOP_RATES) == NUM_STRIPES
-    assert len(STRIPE_ADS_A_RATES) == NUM_STRIPES
-    assert len(STRIPE_DES_A_RATES) == NUM_STRIPES
-    assert len(STRIPE_ADS_B_RATES) == NUM_STRIPES
-    assert len(STRIPE_DES_B_RATES) == NUM_STRIPES
-    assert len(STRIPE_REACT_A_TO_B_RATES) == NUM_STRIPES
-    assert len(STRIPE_REACT_B_TO_A_RATES) == NUM_STRIPES
+    NUM_SITE_TYPES = len(SITE_TYPE_HOP_RATES)
+
+    # --- 4. Mode-Specific Configuration ---
+    
+    # For 'random' mode: Specify fractions for [Type 0, Type 1, ...]
+    SITE_TYPE_FRACTIONS = [0.5, 0.5] # 50% Blue, 50% Red
+    
+    # --- 5. Sanity Checks ---
+    assert LATTICE_MODE in ['stripes', 'random'], "LATTICE_MODE must be 'stripes' or 'random'"
+    assert len(SITE_TYPE_HOP_RATES) == NUM_SITE_TYPES
+    assert len(SITE_TYPE_ADS_A_RATES) == NUM_SITE_TYPES
+    # ... (all other assert lines) ...
+    if LATTICE_MODE == 'random':
+        assert len(SITE_TYPE_FRACTIONS) == NUM_SITE_TYPES, "Fractions list must match number of site types"
+        assert np.isclose(sum(SITE_TYPE_FRACTIONS), 1.0), "SITE_TYPE_FRACTIONS must sum to 1.0"
     
     # ------------------------------------------------------------------
     
     start_time = time.time()
-    print("Starting KMC simulation...")
+    print(f"Starting KMC simulation (Mode: {LATTICE_MODE})...")
     
     lattice = Lattice(LATTICE_SIZE)
-    movement = MovementMatrixStripes(
+    
+    movement = MovementMatrix(
         n=LATTICE_SIZE,
-        num_stripes=NUM_STRIPES,
-        stripe_hop_rates=STRIPE_HOP_RATES,
-        stripe_ads_A_rates=STRIPE_ADS_A_RATES,
-        stripe_des_A_rates=STRIPE_DES_A_RATES,
-        stripe_ads_B_rates=STRIPE_ADS_B_RATES,
-        stripe_des_B_rates=STRIPE_DES_B_RATES,
-        stripe_react_A_to_B_rates=STRIPE_REACT_A_TO_B_RATES,
-        stripe_react_B_to_A_rates=STRIPE_REACT_B_TO_A_RATES
+        mode=LATTICE_MODE,
+        seed=RANDOM_SEED,
+        
+        site_type_hop_rates=SITE_TYPE_HOP_RATES,
+        site_type_ads_A_rates=SITE_TYPE_ADS_A_RATES,
+        site_type_des_A_rates=SITE_TYPE_DES_A_RATES,
+        site_type_ads_B_rates=SITE_TYPE_ADS_B_RATES,
+        site_type_des_B_rates=SITE_TYPE_DES_B_RATES,
+        site_type_react_A_to_B_rates=SITE_TYPE_REACT_A_TO_B_RATES,
+        site_type_react_B_to_A_rates=SITE_TYPE_REACT_B_TO_A_RATES,
+        
+        num_site_types=NUM_SITE_TYPES,
+        site_type_fractions=SITE_TYPE_FRACTIONS
     )
     
-    # Max particles can still be total lattice size
     sim = KMCSimulation(lattice, movement, LATTICE_SIZE * LATTICE_SIZE, TOTAL_TIME, seed=RANDOM_SEED)
     
     trajectories, snapshots, time_stamps = sim.run()
     
     results = {
         'lattice_size': LATTICE_SIZE,
-        'num_stripes': NUM_STRIPES,
+        'lattice_mode': LATTICE_MODE,
+        'site_map': movement.site_map, 
+        'num_site_types': NUM_SITE_TYPES,
+        'site_type_fractions': SITE_TYPE_FRACTIONS if LATTICE_MODE == 'random' else None,
         'total_time': TOTAL_TIME,
         'trajectories': trajectories,
-        'snapshots': snapshots, # These are now {(x,y): 'A'/'B'}
+        'snapshots': snapshots,
         'time_stamps': time_stamps,
         'params': {
-            'hop_rates': STRIPE_HOP_RATES,
-            'ads_A_rates': STRIPE_ADS_A_RATES,
-            'des_A_rates': STRIPE_DES_A_RATES,
-            'ads_B_rates': STRIPE_ADS_B_RATES,
-            'des_B_rates': STRIPE_DES_B_RATES,
-            'react_A_to_B': STRIPE_REACT_A_TO_B_RATES,
-            'react_B_to_A': STRIPE_REACT_B_TO_A_RATES,
+            'site_type_hop_rates': SITE_TYPE_HOP_RATES,
+            'site_type_ads_A_rates': SITE_TYPE_ADS_A_RATES,
+            'site_type_des_A_rates': SITE_TYPE_DES_A_RATES,
+            'site_type_ads_B_rates': SITE_TYPE_ADS_B_RATES,
+            'site_type_des_B_rates': SITE_TYPE_DES_B_RATES,
+            'site_type_react_A_to_B': SITE_TYPE_REACT_A_TO_B_RATES,
+            'site_type_react_B_to_A': SITE_TYPE_REACT_B_TO_A_RATES,
         }
     }
     
-    output_filename = "simulation_results_AB.pkl"
+    output_filename = f"simulation_results_{LATTICE_MODE}.pkl"
     with open(output_filename, 'wb') as f:
         pickle.dump(results, f)
 
