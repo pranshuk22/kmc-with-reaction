@@ -242,7 +242,7 @@ if __name__ == "__main__":
     
     # --- Smart File Loading ---
     # List of possible filenames
-    INPUT_FILENAMES = ["simulation_results_stripes.pkl", "simulation_results_random.pkl"]
+    INPUT_FILENAMES = ["simulation_results_stripes_numba.pkl", "simulation_results_stripes.pkl", "simulation_results_random.pkl"]
     
     loaded_file = None
     for fname in INPUT_FILENAMES:

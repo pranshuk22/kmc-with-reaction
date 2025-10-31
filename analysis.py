@@ -340,11 +340,13 @@ if __name__ == "__main__":
     
     # --- Smart File Loading ---
     INPUT_FILENAMES = {
+        'numba': "simulation_results_stripes_numba.pkl",
         'stripes': "simulation_results_stripes.pkl",
         'random': "simulation_results_random.pkl"
     }
     
     OUTPUT_FILENAMES = {
+        'numba': "analysis_stripes_numba.txt",
         'stripes': "analysis_stripes.txt",
         'random': "analysis_random.txt"
     }

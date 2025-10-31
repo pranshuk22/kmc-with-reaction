@@ -154,4 +154,4 @@ def generate_plots_ab(filename="simulation_results_AB.pkl", output_filename="plo
     print(f"✅ Plot saved to '{output_filename}'")
 
 if __name__ == "__main__":
-    generate_plots_ab("simulation_results_stripes.pkl", "plots_stripes.png")
+    generate_plots_ab("simulation_results_stripes_numba.pkl", "plots_stripes_numba.png")
