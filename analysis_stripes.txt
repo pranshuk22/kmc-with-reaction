@@ -1,0 +1,116 @@
+--- KMC Simulation Analysis Report (A/B) ---
+Source File: simulation_results_stripes.pkl
+
+--- Simulation Parameters ---
+Lattice Mode:                 stripes
+Total Simulation Time:        1000.00
+Total Lattice Sites:          400 (20x20)
+
+========================================
+--- Overall Lattice Statistics ---
+========================================
+
+[Overall - ALL PARTICLES]
+  Avg. Count (Full):          234.41
+  Avg. Count (Last 25%):      234.93
+  Avg. Density (Full):          0.5860 p/site
+  Avg. Density (Last 25%):      0.5873 p/site
+  Time to Reach Avg. (First):   12.06
+  Variance (Post-First Avg.):   58.69
+  Std. Dev. (Post-First Avg.):  7.66
+  Fluctuation Coeff (Std/Mean): 0.0326
+
+[Overall - TYPE A PARTICLES]
+  Avg. Count (Full):          183.71
+  Avg. Count (Last 25%):      184.04
+  Avg. Density (Full):          0.4593 p/site
+  Avg. Density (Last 25%):      0.4601 p/site
+  Time to Reach Avg. (First):   11.96
+  Variance (Post-First Avg.):   49.81
+  Std. Dev. (Post-First Avg.):  7.06
+  Fluctuation Coeff (Std/Mean): 0.0384
+
+[Overall - TYPE B PARTICLES]
+  Avg. Count (Full):          50.70
+  Avg. Count (Last 25%):      50.89
+  Avg. Density (Full):          0.1267 p/site
+  Avg. Density (Last 25%):      0.1272 p/site
+  Time to Reach Avg. (First):   7.64
+  Variance (Post-First Avg.):   32.25
+  Std. Dev. (Post-First Avg.):  5.68
+  Fluctuation Coeff (Std/Mean): 0.1116
+
+========================================
+--- Per-Site-Type Statistics ---
+========================================
+
+--- [Site Type 0 ('Blue') | 200 sites] ---
+
+  [Site Type 0 - ALL PARTICLES]
+    Avg. Count (Full):            152.29
+    Avg. Count (Last 25%):        152.88
+    Avg. Density (Full):          0.7615 p/site
+    Avg. Density (Last 25%):      0.7644 p/site
+    Time to Reach Avg. (First):   7.64
+    Variance (Post-First Avg.):   31.19
+    Std. Dev. (Post-First Avg.):  5.58
+    Fluctuation Coeff (Std/Mean): 0.0366
+
+  [Site Type 0 - TYPE A PARTICLES]
+    Avg. Count (Full):            142.09
+    Avg. Count (Last 25%):        142.81
+    Avg. Density (Full):          0.7105 p/site
+    Avg. Density (Last 25%):      0.7141 p/site
+    Time to Reach Avg. (First):   7.54
+    Variance (Post-First Avg.):   33.38
+    Std. Dev. (Post-First Avg.):  5.78
+    Fluctuation Coeff (Std/Mean): 0.0406
+
+  [Site Type 0 - TYPE B PARTICLES]
+    Avg. Count (Full):            10.20
+    Avg. Count (Last 25%):        10.06
+    Avg. Density (Full):          0.0510 p/site
+    Avg. Density (Last 25%):      0.0503 p/site
+    Time to Reach Avg. (First):   5.23
+    Variance (Post-First Avg.):   7.98
+    Std. Dev. (Post-First Avg.):  2.83
+    Fluctuation Coeff (Std/Mean): 0.2761
+
+--- [Site Type 1 ('Red') | 200 sites] ---
+
+  [Site Type 1 - ALL PARTICLES]
+    Avg. Count (Full):            82.12
+    Avg. Count (Last 25%):        82.05
+    Avg. Density (Full):          0.4106 p/site
+    Avg. Density (Last 25%):      0.4103 p/site
+    Time to Reach Avg. (First):   4.73
+    Variance (Post-First Avg.):   37.94
+    Std. Dev. (Post-First Avg.):  6.16
+    Fluctuation Coeff (Std/Mean): 0.0749
+
+  [Site Type 1 - TYPE A PARTICLES]
+    Avg. Count (Full):            41.62
+    Avg. Count (Last 25%):        41.23
+    Avg. Density (Full):          0.2081 p/site
+    Avg. Density (Last 25%):      0.2061 p/site
+    Time to Reach Avg. (First):   2.62
+    Variance (Post-First Avg.):   28.24
+    Std. Dev. (Post-First Avg.):  5.31
+    Fluctuation Coeff (Std/Mean): 0.1276
+
+  [Site Type 1 - TYPE B PARTICLES]
+    Avg. Count (Full):            40.50
+    Avg. Count (Last 25%):        40.82
+    Avg. Density (Full):          0.2025 p/site
+    Avg. Density (Last 25%):      0.2041 p/site
+    Time to Reach Avg. (First):   5.03
+    Variance (Post-First Avg.):   27.29
+    Std. Dev. (Post-First Avg.):  5.22
+    Fluctuation Coeff (Std/Mean): 0.1286
+
+========================================
+--- Trajectory Statistics ---
+========================================
+Total Unique Particles Served: 400
+Avg. Hops per Particle:        4053.18
+Max. Hops by a Particle:       4801

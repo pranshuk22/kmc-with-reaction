@@ -303,35 +303,55 @@ class KMCSimulation:
         return False
     
     def run(self, max_snapshots=10000):
+        """Runs the KMC simulation, counting and advancing only on successful events."""
         t = 0.0
         last_recorded_t = 0.0
-        min_interval = self.total_time / max_snapshots
-        
+        min_interval = (self.total_time / max_snapshots) if max_snapshots > 0 and self.total_time > 0 else float('inf')
+
+        kmc_steps = 0
+        successful_events = 0
+        failed_events = 0
+
         while t < self.total_time:
             ev, total_rate = self.mm.pick_event()
-            
             if ev is None or total_rate == 0:
                 print("No events possible. Stopping simulation.")
                 break
-                
-            self._execute(ev)
-            
-            dt = -np.log(self.rng.random()) / total_rate
-            t += dt
-            
-            if t - last_recorded_t >= min_interval:
-                snapshot_data = {p_data['site']: p_data['type'] 
-                                 for pid, p_data in self.particles.items()}
-                self.snapshots.append(snapshot_data)
-                self.time_stamps.append(t)
-                last_recorded_t = t
-        
-        snapshot_data = {p_data['site']: p_data['type'] 
-                         for pid, p_data in self.particles.items()}
-        self.snapshots.append(snapshot_data)
-        self.time_stamps.append(t)
 
+            executed = self._execute(ev)
+
+            if executed:
+                successful_events += 1
+                kmc_steps += 1
+
+                dt = -np.log1p(-self.rng.random()) / total_rate
+                if dt < 0 or not np.isfinite(dt):
+                    print(f"Warning: invalid dt ({dt}). Stopping.")
+                    break
+                t += dt
+
+                # Record snapshot periodically
+                if t - last_recorded_t >= min_interval:
+                    snapshot_data = {p_data['site']: p_data['type']
+                                    for pid, p_data in self.particles.items()}
+                    self.snapshots.append(snapshot_data)
+                    self.time_stamps.append(t)
+                    last_recorded_t = t
+            else:
+                failed_events += 1
+                # No time advancement for failed event
+                continue
+
+        # Final snapshot if simulation advanced
+        if t > self.time_stamps[-1]:
+            snapshot_data = {p_data['site']: p_data['type']
+                            for pid, p_data in self.particles.items()}
+            self.snapshots.append(snapshot_data)
+            self.time_stamps.append(t)
+
+        print(f"Simulation finished: {successful_events} successful, {failed_events} failed events.")
         return self.trajectories, self.snapshots, self.time_stamps
+
 
 
 # Main execution block
@@ -339,11 +359,11 @@ if __name__ == "__main__":
     
     # --- 1. CHOOSE LATTICE MODE ---
     # Options: 'stripes' or 'random'
-    LATTICE_MODE = 'random' 
+    LATTICE_MODE = 'stripes' 
     
     # --- 2. Simulation Parameters ---
     LATTICE_SIZE = 20
-    TOTAL_TIME = 10000
+    TOTAL_TIME = 1000
     RANDOM_SEED = 42
 
     # --- 3. Site Type Configuration (Common) ---
@@ -356,7 +376,7 @@ if __name__ == "__main__":
     SITE_TYPE_ADS_B_RATES = [0.0, 0.0]
     SITE_TYPE_DES_B_RATES = [0.01, 0.1]
     
-    SITE_TYPE_REACT_A_TO_B_RATES = [0.0, 0.01]
+    SITE_TYPE_REACT_A_TO_B_RATES = [0.0, 0.1]
     SITE_TYPE_REACT_B_TO_A_RATES = [0.0, 0.0]
 
     NUM_SITE_TYPES = len(SITE_TYPE_HOP_RATES)
